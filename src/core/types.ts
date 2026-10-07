@@ -73,7 +73,7 @@ export type MotionProps = {
   /** The state an element enters from; `false` starts it at `animate` without animating. */
   initial?: MotionTarget | false;
   /** Alias of `initial`, as Moti names it. */
-  from?: MotionTarget;
+  from?: MotionTarget | false;
   /** The state the element animates to whenever it changes. */
   animate?: MotionTarget;
   /** The state a removed element animates to inside `AnimatePresence` before it unmounts. */

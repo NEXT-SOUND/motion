@@ -53,8 +53,11 @@ export type WebMotionProps = MotionProps &
     whileTap?: MotionTarget;
     /** Pairs this element with another of the same id: one grows out of the other. */
     layoutId?: string;
-    /** Slides the element from where it was to where it lands whenever its layout position changes. */
-    layout?: boolean;
+    /**
+     * Slides the element from where it was to where it lands whenever its layout position changes.
+     * Native takes a Reanimated layout animation here instead; the web treats any value as `true`.
+     */
+    layout?: boolean | object;
     style?: MotionStyle;
   };
 

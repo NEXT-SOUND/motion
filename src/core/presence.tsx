@@ -10,7 +10,6 @@ import {
   useReducer,
   useRef,
   useState,
-  type Key,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -60,9 +59,9 @@ export type AnimatePresenceProps = {
   mode?: "sync" | "wait" | "popLayout";
 };
 
-type Entry = { key: Key; element: ReactElement; present: boolean };
+type Entry = { key: string; element: ReactElement; present: boolean };
 
-const keyOf = (element: ReactElement, index: number): Key => element.key ?? `__presence_${index}`;
+const keyOf = (element: ReactElement, index: number) => String(element.key ?? `__presence_${index}`);
 
 /**
  * Keeps a removed child on screen until every animated element inside it has played
@@ -79,7 +78,7 @@ export function AnimatePresence({ children, initial = true, custom, onExitComple
   const firstRender = useRef(true);
   const [initialKeys] = useState(() => new Set(current.map((entry) => entry.key)));
   const rendered = useRef<Entry[]>([]);
-  const finished = useRef(new Set<Key>());
+  const finished = useRef(new Set<string>());
   const onExitCompleteRef = useRef(onExitComplete);
   onExitCompleteRef.current = onExitComplete;
 
@@ -109,7 +108,7 @@ export function AnimatePresence({ children, initial = true, custom, onExitComple
     firstRender.current = false;
   }, []);
 
-  const finish = (key: Key) => {
+  const finish = (key: string) => {
     if (currentKeysRef.current.has(key) || finished.current.has(key)) return;
     finished.current.add(key);
     rerender();
