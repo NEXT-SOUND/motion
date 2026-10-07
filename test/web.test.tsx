@@ -1,7 +1,7 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AnimatePresence, motion } from "../src";
+import { AnimatePresence, motion } from "../src/web";
 
 type FakeAnimation = { finish: () => void; cancel: () => void; finished: Promise<void>; playState: string };
 let animations: { keyframes: Keyframe[]; options: KeyframeAnimationOptions; animation: FakeAnimation }[] = [];

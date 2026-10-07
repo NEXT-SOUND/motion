@@ -12,5 +12,5 @@
     "isolatedModules": true,
     "noEmit": true
   },
-  "include": ["src/index.ts", "src/core", "src/web", "test"]
+  "include": ["src/web.ts", "src/core", "src/web", "test"]
 }
