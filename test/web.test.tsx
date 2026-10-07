@@ -115,6 +115,20 @@ describe("presence", () => {
     expect(queryByTestId("a")).toBeNull();
   });
 
+  it("holds an exit for its duration where Web Animations are missing", () => {
+    vi.useFakeTimers();
+    delete (HTMLElement.prototype as Partial<HTMLElement>).animate;
+    const view = (show: boolean) => (
+      <AnimatePresence>{show ? <motion.div key="a" data-testid="a" animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 200 }} /> : null}</AnimatePresence>
+    );
+    const { rerender, queryByTestId } = render(view(true));
+    rerender(view(false));
+    expect(queryByTestId("a")).not.toBeNull();
+    act(() => vi.advanceTimersByTime(200));
+    expect(queryByTestId("a")).toBeNull();
+    vi.useRealTimers();
+  });
+
   it("removes a child without an exit at once", () => {
     const view = (show: boolean) => <AnimatePresence>{show ? <motion.div key="a" data-testid="a" /> : null}</AnimatePresence>;
     const { rerender, queryByTestId } = render(view(true));

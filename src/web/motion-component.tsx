@@ -314,6 +314,20 @@ export function createMotionComponent(Component: ElementType) {
         GROUP_KEYS[group].some((key) => keys.includes(key) && (isKeyframes(active.values[key]) || start[key] !== values[key])),
       );
       // Read before cancelling, so an interrupted animation continues from where it is on screen.
+      // Without Web Animations (old browsers, test DOMs), the state jumps but completes after
+      // the same time, so an exit still holds its element on screen as long as it would animate.
+      if (!canAnimate) {
+        const longest = Math.max(0, ...groups.map((group) => {
+          const timing = timingOf(activeTransition, keys, group);
+          return timing.iterations === Infinity ? 0 : timing.duration * timing.iterations + timing.delay;
+        }));
+        if (!longest) {
+          done();
+          return;
+        }
+        const timer = setTimeout(done, longest);
+        return () => clearTimeout(timer);
+      }
       const animating = running.current.some((animation) => animation.playState === "running")
         || (typeof element.getAnimations === "function" && element.getAnimations().some((animation) => animation.playState === "running"));
       const frames = groups.map((group) => {
