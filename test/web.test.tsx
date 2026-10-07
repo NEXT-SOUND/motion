@@ -74,6 +74,16 @@ describe("keyframes", () => {
   });
 });
 
+describe("auto sizes", () => {
+  it("enters to the measured natural height through Web Animations", () => {
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true, get: () => 120 });
+    render(<motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} transition={{ duration: 300 }} />);
+    const height = animations.find(({ keyframes }) => "height" in keyframes[0]);
+    expect(height?.keyframes).toEqual([{ height: "0px" }, { height: "120px" }]);
+    delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight;
+  });
+});
+
 describe("changes", () => {
   it("animates a changed state through Web Animations from the previous values", () => {
     const { rerender } = render(<motion.div animate={{ opacity: 1 }} transition={{ duration: 200 }} />);

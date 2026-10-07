@@ -57,10 +57,10 @@ export type MotionValues = {
   scaleY?: Keyframes<number>;
   /** Degrees when a number. */
   rotate?: Keyframes<number | string>;
-  /** Pixels, or `"auto"` for the content's natural height (web). */
-  height?: number | "auto";
-  /** Pixels, or `"auto"` for the content's natural width (web). */
-  width?: number | "auto";
+  /** A length; `"auto"` animates to the content's natural height (web). */
+  height?: Length;
+  /** A length; `"auto"` animates to the content's natural width (web). */
+  width?: Length;
 };
 
 /** A state to animate to, optionally with its own transition. */

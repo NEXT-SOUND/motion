@@ -243,14 +243,17 @@ export function createMotionComponent<P extends object>(Component: ElementType) 
     const values = fillValues(keys, active);
     const activeKey = `${exiting}:${targetKey({ values: active.values, transition: activeTransition })}`;
 
-    // The enter is decided once, at mount. Single values enter in CSS from the first paint;
-    // keyframe arrays need Web Animations, so they start once the element mounts.
+    // The enter is decided once, at mount. Single values enter in CSS from the first paint.
     const [enter] = useState(() => {
       if (!initialTarget || presence?.initial === false) return null;
       const entering = keys.filter((key) => initialTarget.values[key] !== undefined || isKeyframes(animateTarget.values[key]));
       if (!entering.length) return null;
       const startValues = fillValues(keys, initialTarget, animateTarget);
-      if (hasKeyframes(animateTarget)) return { kind: "keyframes" as const, from: startValues };
+      // CSS cannot animate to keyframe lists or to an `auto` size: those enter through Web Animations,
+      // which run before the first paint of an element mounted in the browser.
+      const settled = fillValues(keys, animateTarget);
+      const toAutoSize = entering.some((key) => (key === "height" || key === "width") && settled[key] === "auto");
+      if (hasKeyframes(animateTarget) || toAutoSize) return { kind: "js" as const, from: startValues };
       const css = enterStyle(keys, entering, startValues, animateTarget.transition ?? transition);
       return css ? { kind: "css" as const, style: css, entering } : null;
     });
@@ -297,7 +300,7 @@ export function createMotionComponent<P extends object>(Component: ElementType) 
         callbacks.current.onAnimationStart?.(source);
       }
 
-      const start = !previous && enter?.kind === "keyframes" ? enter.from : previous?.values;
+      const start = !previous && enter?.kind === "js" ? enter.from : previous?.values;
       if (!start) return;
       const keyframed = hasKeyframes(active);
       const groups = groupsOf(keys).filter((group) =>
