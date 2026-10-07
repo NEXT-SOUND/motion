@@ -7,18 +7,25 @@ export type Ease =
   | "easeInOut"
   | readonly [number, number, number, number];
 
-/** A fixed-length animation. Times are in milliseconds. */
-export type TimingTransition = {
+/** How a transition repeats: `Infinity` repeats forever; `"reverse"` plays every other run backwards. */
+type Repeat = { repeat?: number; repeatType?: "loop" | "reverse" };
+
+/**
+ * A fixed-length animation. Times are in milliseconds. For keyframe arrays, `times` places
+ * each keyframe (0 to 1) and `ease` may name one curve per step.
+ */
+export type TimingTransition = Repeat & {
   type?: "timing";
   /** Milliseconds. */
   duration?: number;
   /** Milliseconds. */
   delay?: number;
-  ease?: Ease;
+  ease?: Ease | readonly Ease[];
+  times?: readonly number[];
 };
 
 /** A damped spring. Its length follows from the physics. */
-export type SpringTransition = {
+export type SpringTransition = Repeat & {
   type: "spring";
   stiffness?: number;
   damping?: number;
@@ -27,25 +34,29 @@ export type SpringTransition = {
   delay?: number;
 };
 
-export type Transition = TimingTransition | SpringTransition;
+/** A transition, optionally with its own transition for single values (e.g. `{ duration: 300, opacity: { duration: 100 } }`). */
+export type Transition = (TimingTransition | SpringTransition) & { [Key in MotionKey]?: TimingTransition | SpringTransition };
 
 /** A length: a number is pixels, a string is any CSS length such as `"50%"`. */
 export type Length = number | string;
 
+/** A value, or keyframes it moves through in turn. */
+export type Keyframes<T> = T | readonly T[];
+
 /** The values an element can animate. Transforms compose as translate, scale, rotate. */
 export type MotionValues = {
-  opacity?: number;
-  x?: Length;
-  y?: Length;
+  opacity?: Keyframes<number>;
+  x?: Keyframes<Length>;
+  y?: Keyframes<Length>;
   /** Alias of `x`. */
-  translateX?: Length;
+  translateX?: Keyframes<Length>;
   /** Alias of `y`. */
-  translateY?: Length;
-  scale?: number;
-  scaleX?: number;
-  scaleY?: number;
+  translateY?: Keyframes<Length>;
+  scale?: Keyframes<number>;
+  scaleX?: Keyframes<number>;
+  scaleY?: Keyframes<number>;
   /** Degrees when a number. */
-  rotate?: number | string;
+  rotate?: Keyframes<number | string>;
   /** Pixels, or `"auto"` for the content's natural height (web). */
   height?: number | "auto";
   /** Pixels, or `"auto"` for the content's natural width (web). */

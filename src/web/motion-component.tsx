@@ -19,16 +19,21 @@ import { PresenceContext } from "../core/presence";
 import {
   animatedKeys,
   fillValues,
+  hasKeyframes,
+  isKeyframes,
   resolveExit,
   resolveTarget,
   targetKey,
+  TRANSFORM_KEYS,
+  transitionFor,
   type ResolvedTarget,
+  type Value,
 } from "../core/target";
 import { resolveTiming, type ResolvedTiming } from "../core/timing";
-import type { MotionKey, MotionProps, MotionTarget } from "../core/types";
+import type { MotionKey, MotionProps, MotionTarget, Transition } from "../core/types";
 import { DRAG_X, DRAG_Y, dragTouchAction, useDrag, type DragOptions } from "./drag";
 import { useLayoutId } from "./layout";
-import { cssOf, transformOf, usesTransform } from "./style";
+import { transformOf } from "./style";
 import { MotionValue } from "./value";
 
 /** `x`/`y` may be `MotionValue`s: they move the element through its `translate`, outside renders. */
@@ -50,44 +55,65 @@ export type WebMotionProps = MotionProps &
     style?: MotionStyle;
   };
 
+type Values = Record<MotionKey, Value>;
+/** CSS properties animated independently, each with its own transition. */
+type Group = "opacity" | "transform" | "height" | "width";
+const GROUP_KEYS: Record<Group, readonly MotionKey[]> = {
+  opacity: ["opacity"],
+  transform: TRANSFORM_KEYS,
+  height: ["height"],
+  width: ["width"],
+};
+const GROUPS = Object.keys(GROUP_KEYS) as Group[];
+const groupsOf = (keys: readonly MotionKey[]) => GROUPS.filter((group) => GROUP_KEYS[group].some((key) => keys.includes(key)));
+const timingOf = (transition: Transition | undefined, keys: readonly MotionKey[], group: Group) =>
+  resolveTiming(transitionFor(transition, GROUP_KEYS[group].find((key) => keys.includes(key)) ?? GROUP_KEYS[group][0]));
+
 const VALUE_X = "--ym-value-x";
 const VALUE_Y = "--ym-value-y";
 const TRANSLATE = `calc(var(${DRAG_X}, 0px) + var(${VALUE_X}, 0px)) calc(var(${DRAG_Y}, 0px) + var(${VALUE_Y}, 0px))`;
 
-const length = (value: number | string) => (typeof value === "number" ? `${value}px` : value);
+const length = (value: Value) => (typeof value === "number" ? `${value}px` : value);
 const merge = (base: ResolvedTarget, over: ResolvedTarget): ResolvedTarget => ({
   values: { ...base.values, ...over.values },
   transition: over.transition ?? base.transition,
 });
+const iterationCount = (timing: ResolvedTiming) => (timing.iterations === Infinity ? "infinite" : String(timing.iterations));
 
-/** The CSS `animation` and variables that enter `keys` from `from`. */
-function enterStyle(keys: readonly MotionKey[], entering: readonly MotionKey[], from: Record<MotionKey, number | string>, timing: ResolvedTiming) {
-  if (timing.duration <= 0 && timing.delay <= 0) return null;
+/** The CSS one group takes for `values`. */
+function groupCss(group: Group, keys: readonly MotionKey[], values: Values): Record<string, string> {
+  if (group === "opacity") return { opacity: String(values.opacity) };
+  if (group === "transform") return { transform: transformOf(keys, values) || "none" };
+  return { [group]: length(values[group]) };
+}
+
+/** The inline style for settled `values`. */
+function settledStyle(keys: readonly MotionKey[], values: Values) {
   const style: Record<string, string | number> = {};
-  const names: string[] = [];
-  if (entering.includes("opacity")) {
-    style["--ym-from-opacity"] = from.opacity;
-    names.push("ym-enter-opacity");
-  }
-  if (entering.some((key) => usesTransform([key]))) {
-    style["--ym-from-transform"] = transformOf(keys, from) || "none";
-    names.push("ym-enter-transform");
-  }
-  if (entering.includes("height") && from.height !== "auto") {
-    style["--ym-from-height"] = length(from.height);
-    names.push("ym-enter-height");
-  }
-  if (entering.includes("width") && from.width !== "auto") {
-    style["--ym-from-width"] = length(from.width);
-    names.push("ym-enter-width");
-  }
-  if (!names.length) return null;
-  style.animation = names.map((name) => `${name} ${timing.duration}ms ${timing.easing} ${timing.delay}ms backwards`).join(", ");
+  for (const group of groupsOf(keys)) Object.assign(style, groupCss(group, keys, values));
+  if (style.opacity !== undefined) style.opacity = Number(style.opacity);
   return style;
 }
 
-/** A size the element had at `previous`: mid-animation it is on screen; `auto` is measured as it was. */
-function previousSize(element: HTMLElement, key: "height" | "width", previous: number | string, animating: boolean) {
+/** The CSS `animation` and variables that enter `entering` keys from `from`, one animation per group. */
+function enterStyle(keys: readonly MotionKey[], entering: readonly MotionKey[], from: Values, transition: Transition | undefined) {
+  const style: Record<string, string | number> = {};
+  const animations: string[] = [];
+  for (const group of groupsOf(entering)) {
+    if ((group === "height" || group === "width") && from[group] === "auto") continue;
+    const timing = timingOf(transition, entering, group);
+    if (timing.duration <= 0 && timing.delay <= 0) continue;
+    const [property, value] = Object.entries(groupCss(group, keys, from))[0];
+    style[`--ym-from-${property}`] = value;
+    animations.push(`ym-enter-${group} ${timing.duration}ms ${timing.easing} ${timing.delay}ms ${iterationCount(timing)} ${timing.direction} backwards`);
+  }
+  if (!animations.length) return null;
+  style.animation = animations.join(", ");
+  return style;
+}
+
+/** A size the element had: mid-animation it is on screen; `auto` is measured as it was. */
+function previousSize(element: HTMLElement, key: "height" | "width", previous: Value, animating: boolean) {
   const read = () => (key === "height" ? element.offsetHeight : element.offsetWidth);
   if (animating) return `${read()}px`;
   if (previous !== "auto") return length(previous);
@@ -98,28 +124,43 @@ function previousSize(element: HTMLElement, key: "height" | "width", previous: n
   return `${natural}px`;
 }
 
-/** The values the element shows right now, mid-animation included. */
-function onScreen(element: HTMLElement, keys: readonly MotionKey[], previous: Record<MotionKey, number | string>, animating: boolean) {
+/** Where a group is on screen right now, mid-animation included. */
+function onScreen(element: HTMLElement, group: Group, keys: readonly MotionKey[], previous: Values, animating: boolean) {
+  if (group === "height" || group === "width") return { [group]: previousSize(element, group, previous[group], animating) };
+  if (!animating) return groupCss(group, keys, previous);
   const computed = getComputedStyle(element);
-  const style: Record<string, string> = {};
-  if (keys.includes("opacity")) style.opacity = animating ? computed.opacity : String(previous.opacity);
-  if (usesTransform(keys)) {
-    style.transform = animating && computed.transform && computed.transform !== "none"
-      ? computed.transform
-      : transformOf(keys, previous) || "none";
-  }
-  if (keys.includes("height")) style.height = previousSize(element, "height", previous.height, animating);
-  if (keys.includes("width")) style.width = previousSize(element, "width", previous.width, animating);
-  return style;
+  if (group === "opacity") return { opacity: computed.opacity };
+  return { transform: computed.transform && computed.transform !== "none" ? computed.transform : groupCss(group, keys, previous).transform };
 }
 
-/** The keyframe a state ends on; `auto` sizes become the measured natural size. */
-function endFrame(element: HTMLElement, keys: readonly MotionKey[], values: Record<MotionKey, number | string>) {
-  const style = cssOf(keys, values) as Record<string, string | number>;
-  if (keys.includes("height") && values.height === "auto") style.height = `${element.scrollHeight}px`;
-  if (keys.includes("width") && values.width === "auto") style.width = `${element.scrollWidth}px`;
-  if (style.opacity !== undefined) style.opacity = String(style.opacity);
-  return style;
+/** The keyframe a group ends on; `auto` sizes become the measured natural size. */
+function endFrame(element: HTMLElement, group: Group, keys: readonly MotionKey[], values: Values) {
+  if (group === "height" && values.height === "auto") return { height: `${element.scrollHeight}px` };
+  if (group === "width" && values.width === "auto") return { width: `${element.scrollWidth}px` };
+  return groupCss(group, keys, values);
+}
+
+/** Web Animations keyframes for a group whose values include keyframe arrays. */
+function sequenceFrames(group: Group, keys: readonly MotionKey[], target: ResolvedTarget, from: Values, timing: ResolvedTiming) {
+  const groupKeys = GROUP_KEYS[group].filter((key) => keys.includes(key));
+  const count = Math.max(2, ...groupKeys.map((key) => {
+    const frames = target.values[key];
+    return isKeyframes(frames) ? frames.length : 2;
+  }));
+  const easings = timing.stepEasings(count - 1);
+  return Array.from({ length: count }, (_, index) => {
+    const values = { ...from } as Values;
+    for (const key of groupKeys) {
+      const frames = target.values[key];
+      if (isKeyframes(frames)) values[key] = frames[Math.min(index, frames.length - 1)];
+      else if (frames !== undefined) values[key] = index === 0 ? from[key] : frames;
+    }
+    return {
+      ...groupCss(group, keys, values),
+      ...(timing.times ? { offset: timing.times[Math.min(index, timing.times.length - 1)] } : {}),
+      ...(index < count - 1 ? { easing: easings[index] } : {}),
+    };
+  });
 }
 
 function assignRef<T>(ref: ForwardedRef<T | null> | undefined, value: T | null) {
@@ -198,79 +239,112 @@ export function createMotionComponent<P extends object>(Component: ElementType) 
       active = merge(active, exitTarget);
       activeSource = exitSource;
     }
+    const activeTransition = active.transition ?? transition;
     const values = fillValues(keys, active);
-    const activeKey = `${exiting}:${targetKey({ values, transition: active.transition ?? transition })}`;
+    const activeKey = `${exiting}:${targetKey({ values: active.values, transition: activeTransition })}`;
 
-    // The enter animation is decided once, at mount, and runs in CSS from the first paint.
+    // The enter is decided once, at mount. Single values enter in CSS from the first paint;
+    // keyframe arrays need Web Animations, so they start once the element mounts.
     const [enter] = useState(() => {
       if (!initialTarget || presence?.initial === false) return null;
-      const entering = keys.filter((key) => initialTarget.values[key] !== undefined);
+      const entering = keys.filter((key) => initialTarget.values[key] !== undefined || isKeyframes(animateTarget.values[key]));
       if (!entering.length) return null;
-      const timing = resolveTiming(animateTarget.transition ?? transition);
-      const style = enterStyle(keys, entering, fillValues(keys, initialTarget, animateTarget), timing);
-      return style ? { style, timing } : null;
+      const startValues = fillValues(keys, initialTarget, animateTarget);
+      if (hasKeyframes(animateTarget)) return { kind: "keyframes" as const, from: startValues };
+      const css = enterStyle(keys, entering, startValues, animateTarget.transition ?? transition);
+      return css ? { kind: "css" as const, style: css, entering } : null;
     });
 
     const callbacks = useRef({ onAnimationStart, onAnimationComplete, safeToRemove: () => presence?.onExitComplete(id) });
     callbacks.current = { onAnimationStart, onAnimationComplete, safeToRemove: () => presence?.onExitComplete(id) };
-    const committed = useRef<{ key: string; values: Record<MotionKey, number | string> } | null>(null);
-    const running = useRef<Animation | null>(null);
+    const committed = useRef<{ key: string; values: Values } | null>(null);
+    const running = useRef<Animation[]>([]);
 
     useLayoutEffect(() => {
       const element = elementRef.current;
       const previous = committed.current;
       committed.current = { key: activeKey, values };
-      if (!element) return;
+      if (!element || (previous && previous.key === activeKey)) return;
       const source = activeSource;
-      if (!previous) {
-        // Mount: report the CSS enter once it ends.
-        if (!enter) return;
-        callbacks.current.onAnimationStart?.(source);
-        const finish = () => callbacks.current.onAnimationComplete?.(source);
-        const css = typeof element.getAnimations === "function"
-          ? element.getAnimations().filter((animation) => (animation as CSSAnimation).animationName?.startsWith("ym-enter"))
-          : [];
-        if (css.length) void Promise.all(css.map((animation) => animation.finished)).then(finish, () => {});
-        else {
-          const timer = setTimeout(finish, enter.timing.duration + enter.timing.delay);
-          return () => clearTimeout(timer);
-        }
-        return;
-      }
-      if (previous.key === activeKey) return;
-      const timing = resolveTiming(active.transition ?? transition);
       const done = () => {
         callbacks.current.onAnimationComplete?.(source);
         if (exiting) callbacks.current.safeToRemove();
       };
-      callbacks.current.onAnimationStart?.(source);
-      const changed = keys.filter((key) => previous.values[key] !== values[key]);
-      if (!changed.length || typeof element.animate !== "function" || (timing.duration <= 0 && timing.delay <= 0)) {
-        running.current?.cancel();
-        running.current = null;
+      const canAnimate = typeof element.animate === "function";
+
+      if (!previous) {
+        if (!enter) return;
+        callbacks.current.onAnimationStart?.(source);
+        if (enter.kind === "css") {
+          const css = typeof element.getAnimations === "function"
+            ? element.getAnimations().filter((animation) => (animation as CSSAnimation).animationName?.startsWith("ym-enter"))
+            : [];
+          const finite = css.filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity);
+          if (finite.length) void Promise.all(finite.map((animation) => animation.finished)).then(done, () => {});
+          else if (!css.length) {
+            const longest = Math.max(...groupsOf(enter.entering).map((group) => {
+              const timing = timingOf(animateTarget.transition ?? transition, enter.entering, group);
+              return timing.iterations === Infinity ? -1 : timing.duration * timing.iterations + timing.delay;
+            }));
+            if (longest >= 0) {
+              const timer = setTimeout(done, longest);
+              return () => clearTimeout(timer);
+            }
+          }
+          return;
+        }
+      } else {
+        callbacks.current.onAnimationStart?.(source);
+      }
+
+      const start = !previous && enter?.kind === "keyframes" ? enter.from : previous?.values;
+      if (!start) return;
+      const keyframed = hasKeyframes(active);
+      const groups = groupsOf(keys).filter((group) =>
+        GROUP_KEYS[group].some((key) => keys.includes(key) && (isKeyframes(active.values[key]) || start[key] !== values[key])),
+      );
+      // Read before cancelling, so an interrupted animation continues from where it is on screen.
+      const animating = running.current.some((animation) => animation.playState === "running")
+        || (typeof element.getAnimations === "function" && element.getAnimations().some((animation) => animation.playState === "running"));
+      const frames = groups.map((group) => {
+        const timing = timingOf(activeTransition, keys, group);
+        if (!canAnimate || (timing.duration <= 0 && timing.delay <= 0)) return null;
+        const keyframes = keyframed
+          ? sequenceFrames(group, keys, active, start, timing)
+          : [onScreen(element, group, keys, start, animating), endFrame(element, group, keys, values)];
+        return { keyframes, timing };
+      });
+      running.current.forEach((animation) => animation.cancel());
+      running.current = [];
+      const started = frames.flatMap((frame) => {
+        if (!frame) return [];
+        return [
+          element.animate(frame.keyframes, {
+            duration: frame.timing.duration,
+            delay: frame.timing.delay,
+            easing: keyframed ? "linear" : frame.timing.easing,
+            iterations: frame.timing.iterations,
+            direction: frame.timing.direction,
+            // A leaving element holds its exit state until it unmounts.
+            fill: exiting ? "both" : "backwards",
+          }),
+        ];
+      });
+      running.current = started;
+      const finite = started.filter((animation) => animation.effect?.getComputedTiming?.().iterations !== Infinity);
+      if (!finite.length && started.length) return;
+      if (!finite.length) {
         done();
         return;
       }
-      // Read before cancelling, so an interrupted animation continues from where it is on screen.
-      const animating = !!running.current || (typeof element.getAnimations === "function" && element.getAnimations().some((animation) => animation.playState === "running"));
-      const from = onScreen(element, changed, previous.values, animating);
-      running.current?.cancel();
-      const animation = element.animate([from, endFrame(element, changed, values)], {
-        duration: timing.duration,
-        delay: timing.delay,
-        easing: timing.easing,
-        // A leaving element holds its exit state until it unmounts.
-        fill: exiting ? "both" : "backwards",
-      });
-      running.current = animation;
-      animation.finished.then(() => {
-        if (running.current === animation) running.current = null;
+      void Promise.all(finite.map((animation) => animation.finished)).then(() => {
+        if (running.current === started) running.current = [];
         done();
       }, () => {});
       // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by the resolved state
     }, [activeKey]);
 
-    useLayoutId(layoutId, elementRef, isPresent, active.transition ?? transition);
+    useLayoutId(layoutId, elementRef, isPresent, activeTransition);
     const dragging = useDrag(elementRef, { drag, dragConstraints, dragElastic, dragListener, dragControls, onDragStart, onDrag, onDragEnd });
 
     // `x`/`y` values in `style` move the element through `translate`, like a drag.
@@ -293,8 +367,8 @@ export function createMotionComponent<P extends object>(Component: ElementType) 
 
     const finalStyle: Record<string, unknown> = {
       ...ownStyle,
-      ...cssOf(keys, values),
-      ...(enter?.style ?? {}),
+      ...settledStyle(keys, values),
+      ...(enter?.kind === "css" ? enter.style : {}),
       ...valueStyle,
       ...(usesTranslate ? { translate: TRANSLATE } : {}),
       ...(drag ? { touchAction: dragTouchAction(drag), userSelect: dragging ? "none" : undefined } : {}),

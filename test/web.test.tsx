@@ -29,7 +29,7 @@ describe("enter", () => {
     );
     expect(html).toContain("--ym-from-opacity:0");
     expect(html).toContain("--ym-from-transform:translate(0px, -4px)");
-    expect(html).toContain("ym-enter-opacity 160ms cubic-bezier(0, 0, 0.58, 1) 0ms backwards");
+    expect(html).toContain("ym-enter-opacity 160ms cubic-bezier(0, 0, 0.58, 1) 0ms 1 normal backwards");
     expect(html).toContain("opacity:1");
   });
 
@@ -40,6 +40,36 @@ describe("enter", () => {
       </AnimatePresence>,
     );
     expect(html).not.toContain("ym-enter");
+  });
+});
+
+describe("repeat", () => {
+  it("loops a CSS enter forever, back and forth", () => {
+    const html = renderToString(
+      <motion.div from={{ opacity: 1 }} animate={{ opacity: 0.5 }} transition={{ duration: 700, repeat: Infinity, repeatType: "reverse" }} />,
+    );
+    expect(html).toContain("ym-enter-opacity 700ms cubic-bezier(0, 0, 0.58, 1) 0ms infinite alternate backwards");
+  });
+});
+
+describe("keyframes", () => {
+  it("runs keyframe arrays through Web Animations with times, a curve per step, and per-value transitions", () => {
+    render(
+      <motion.div
+        initial={{ y: 0, opacity: 1 }}
+        animate={{ y: [0, -40, 20], opacity: [1, 1, 0] }}
+        transition={{ duration: 1000, delay: 50, times: [0, 0.3, 1], ease: ["easeOut", "easeIn"], opacity: { duration: 1000, delay: 50, times: [0, 0.6, 1] } }}
+      />,
+    );
+    const transform = animations.find(({ keyframes }) => "transform" in keyframes[0]);
+    const opacity = animations.find(({ keyframes }) => "opacity" in keyframes[0]);
+    expect(transform?.keyframes).toEqual([
+      { transform: "translate(0px, 0px)", offset: 0, easing: "cubic-bezier(0, 0, 0.58, 1)" },
+      { transform: "translate(0px, -40px)", offset: 0.3, easing: "cubic-bezier(0.42, 0, 1, 1)" },
+      { transform: "translate(0px, 20px)", offset: 1 },
+    ]);
+    expect(opacity?.keyframes.map((frame) => frame.offset)).toEqual([0, 0.6, 1]);
+    expect(transform?.options).toMatchObject({ duration: 1000, delay: 50 });
   });
 });
 

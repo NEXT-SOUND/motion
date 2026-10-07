@@ -6,33 +6,70 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withDelay,
+  withRepeat,
+  withSequence,
   withSpring,
   withTiming,
   type SharedValue,
 } from "react-native-reanimated";
 import { bezierPoints, DEFAULT_DURATION, DEFAULT_EASE } from "../core/easing";
 import { PresenceContext } from "../core/presence";
-import { animatedKeys, fillValues, resolveExit, resolveTarget, targetKey, type ResolvedTarget } from "../core/target";
-import { springParams } from "../core/spring";
-import type { MotionKey, MotionProps, Transition } from "../core/types";
+import {
+  animatedKeys,
+  fillValues,
+  isKeyframes,
+  resolveExit,
+  resolveTarget,
+  targetKey,
+  transitionFor,
+  type Frames,
+  type ResolvedTarget,
+} from "../core/target";
+import { springCurve, springParams } from "../core/spring";
+import type { Ease, MotionKey, MotionProps, SpringTransition, TimingTransition } from "../core/types";
 
 type Animatable = number | string;
+type SingleTransition = TimingTransition | SpringTransition;
 
-/** Reanimated animation of one value to `to`, following `transition`. */
-function animation(to: Animatable, transition: Transition | undefined, onDone?: () => void) {
+/** One Reanimated step of a value to `to`. */
+function step(to: Animatable, transition: SingleTransition | undefined, onDone?: () => void) {
   const callback = onDone
     ? (finished?: boolean) => {
         "worklet";
         if (finished) runOnJS(onDone)();
       }
     : undefined;
+  if (transition?.type === "spring") return withSpring(to as number, springParams(transition), callback);
+  const ease = transition ? transition.ease : DEFAULT_EASE;
+  const [x1, y1, x2, y2] = bezierPoints(Array.isArray(ease) && typeof ease[0] !== "number" ? (ease as readonly Ease[])[0] : (ease as Ease | undefined));
+  return withTiming(to as number, { duration: transition?.duration ?? DEFAULT_DURATION, easing: Easing.bezier(x1, y1, x2, y2) }, callback);
+}
+
+/** The transition of keyframe step `index` of `steps`: its share of the duration and its own curve. */
+function stepTransition(transition: SingleTransition | undefined, index: number, steps: number): SingleTransition | undefined {
+  if (!transition || transition.type === "spring") return transition;
+  const duration = transition.duration ?? DEFAULT_DURATION;
+  const times = transition.times;
+  const share = times && times.length === steps + 1 ? times[index + 1] - times[index] : 1 / steps;
+  const ease = Array.isArray(transition.ease) && typeof transition.ease[0] !== "number"
+    ? (transition.ease as readonly Ease[])[Math.min(index, transition.ease.length - 1)]
+    : (transition.ease as Ease | undefined);
+  return { duration: duration * share, ease };
+}
+
+/** Reanimated animation of one value through its frames, following its transition, delay, and repeat. */
+function animation(frames: Frames, transition: SingleTransition | undefined, onDone?: () => void) {
   let next;
-  if (transition?.type === "spring") {
-    next = withSpring(to as number, springParams(transition), callback);
+  if (isKeyframes(frames)) {
+    const steps = frames.length - 1;
+    next = withSequence(
+      withTiming(frames[0] as number, { duration: 0 }),
+      ...frames.slice(1).map((value, index) => step(value, stepTransition(transition, index, steps), index === steps - 1 ? onDone : undefined)),
+    );
   } else {
-    const [x1, y1, x2, y2] = transition ? bezierPoints(transition.ease) : DEFAULT_EASE;
-    next = withTiming(to as number, { duration: transition?.duration ?? DEFAULT_DURATION, easing: Easing.bezier(x1, y1, x2, y2) }, callback);
+    next = step(frames, transition, onDone);
   }
+  if (transition?.repeat) next = withRepeat(next, transition.repeat === Infinity ? -1 : transition.repeat + 1, transition.repeatType === "reverse");
   return transition?.delay ? withDelay(transition.delay, next) : next;
 }
 
@@ -66,7 +103,7 @@ export function createMotionComponent<P extends object>(Component: ComponentType
       : animateTarget;
     const values = fillValues(keys, active);
     const activeTransition = active.transition ?? transition;
-    const activeKey = `${exiting}:${targetKey({ values, transition: activeTransition })}`;
+    const activeKey = `${exiting}:${targetKey({ values: active.values, transition: activeTransition })}`;
 
     const [enters] = useState(() => !!initialTarget && presence?.initial !== false);
     const start = enters && initialTarget ? fillValues(keys, initialTarget, animateTarget) : values;
@@ -94,8 +131,17 @@ export function createMotionComponent<P extends object>(Component: ComponentType
         done();
         return;
       }
-      keys.forEach((key, index) => {
-        shared[key].value = animation(values[key], activeTransition, index === 0 ? done : undefined);
+      // The longest-running value reports completion; one that repeats forever never completes.
+      const length = (key: MotionKey) => {
+        const own = transitionFor(activeTransition, key);
+        if (own?.repeat === Infinity) return -1;
+        const base = own?.type === "spring" ? springCurve(own).duration : own?.duration ?? DEFAULT_DURATION;
+        return (own?.delay ?? 0) + base * ((own?.repeat ?? 0) + 1);
+      };
+      const longest = keys.reduce((best, key) => (length(key) > length(best) ? key : best), keys[0]);
+      keys.forEach((key) => {
+        const frames = active.values[key] ?? values[key];
+        shared[key].value = animation(frames, transitionFor(activeTransition, key), key === longest && length(key) >= 0 ? done : undefined);
       });
       // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by the resolved state
     }, [activeKey]);
