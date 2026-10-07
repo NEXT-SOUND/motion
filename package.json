@@ -1,0 +1,61 @@
+{
+  "name": "@yusang-park/motion",
+  "version": "0.1.0",
+  "description": "One animation API for React on the web (CSS and Web Animations) and React Native (Reanimated).",
+  "license": "MIT",
+  "author": "Yusang Park",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Yusang-park/motion.git"
+  },
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "react-native": "./src/index.native.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "react-native": "./src/index.native.ts",
+      "default": "./src/index.ts"
+    },
+    "./motion.css": "./src/web/motion.css"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": [
+    "*.css"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.native.json",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-native": ">=0.74",
+    "react-native-reanimated": ">=3"
+  },
+  "peerDependenciesMeta": {
+    "react-native": {
+      "optional": true
+    },
+    "react-native-reanimated": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.0",
+    "@types/react": "~19.2.17",
+    "@types/react-dom": "~19.2.3",
+    "jsdom": "^26.1.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.0",
+    "react-native-reanimated": "4.5.0",
+    "react-native-worklets": "0.10.0",
+    "typescript": "~5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

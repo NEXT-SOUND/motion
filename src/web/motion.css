@@ -1,0 +1,28 @@
+/*
+ * Enter animations run in CSS, so an element enters from its first paint, before any
+ * script loads. Each element sets the `--ym-from-*` value it enters from; the keyframes
+ * end at the element's own (animated-to) style.
+ */
+@keyframes ym-enter-opacity {
+  from {
+    opacity: var(--ym-from-opacity);
+  }
+}
+
+@keyframes ym-enter-transform {
+  from {
+    transform: var(--ym-from-transform);
+  }
+}
+
+@keyframes ym-enter-height {
+  from {
+    height: var(--ym-from-height);
+  }
+}
+
+@keyframes ym-enter-width {
+  from {
+    width: var(--ym-from-width);
+  }
+}
