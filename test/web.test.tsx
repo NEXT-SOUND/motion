@@ -1,4 +1,4 @@
-import { act, render } from "@testing-library/react";
+import { act, cleanup, render } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AnimatePresence, motion } from "../src";
@@ -19,6 +19,7 @@ beforeEach(() => {
   };
 });
 afterEach(() => {
+  cleanup();
   delete (HTMLElement.prototype as Partial<HTMLElement>).animate;
 });
 
@@ -131,6 +132,21 @@ describe("presence", () => {
     rerender(view(true));
     await act(async () => animations.forEach(({ animation }) => animation.finish()));
     expect(queryByTestId("a")).not.toBeNull();
+  });
+
+  it("holds a new child back until the leaving one is gone in wait mode", async () => {
+    const view = (key: string) => (
+      <AnimatePresence mode="wait">
+        <motion.div key={key} data-testid={key} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />
+      </AnimatePresence>
+    );
+    const { rerender, queryByTestId } = render(view("a"));
+    rerender(view("b"));
+    expect(queryByTestId("a")).not.toBeNull();
+    expect(queryByTestId("b")).toBeNull();
+    await act(async () => animations[0].animation.finish());
+    expect(queryByTestId("a")).toBeNull();
+    expect(queryByTestId("b")).not.toBeNull();
   });
 
   it("keeps a leaving child in its place among the others", () => {

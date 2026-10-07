@@ -50,8 +50,8 @@ export type AnimatePresenceProps = {
   /** Passed to exit functions of the children leaving, e.g. to exit instantly. */
   custom?: unknown;
   onExitComplete?: () => void;
-  /** Accepted for API compatibility; children always enter and exit together. */
-  mode?: "sync" | "wait" | "popLayout";
+  /** `"wait"` holds new children back until the leaving ones have finished; `"sync"` (default) does both at once. */
+  mode?: "sync" | "wait";
 };
 
 type Entry = { key: Key; element: ReactElement; present: boolean };
@@ -63,7 +63,7 @@ const keyOf = (element: ReactElement, index: number): Key => element.key ?? `__p
  * its exit, then unmounts it. Children are matched by `key`; a leaving child keeps its
  * place among the others.
  */
-export function AnimatePresence({ children, initial = true, custom, onExitComplete }: AnimatePresenceProps) {
+export function AnimatePresence({ children, initial = true, custom, onExitComplete, mode = "sync" }: AnimatePresenceProps) {
   const current = (Children.toArray(children).filter(isValidElement) as ReactElement[]).map((element, index) => ({
     key: keyOf(element, index),
     element,
@@ -93,7 +93,11 @@ export function AnimatePresence({ children, initial = true, custom, onExitComple
     }
     entries.splice(at, 0, { key: entry.key, element: entry.element, present: false });
   });
-  rendered.current = entries;
+  // In "wait" mode a newly added child appears only once every leaving child is gone.
+  const waiting = mode === "wait" && entries.some((entry) => !entry.present);
+  const previousKeys = new Set(previous.map((entry) => entry.key));
+  const shown = waiting ? entries.filter((entry) => !entry.present || previousKeys.has(entry.key)) : entries;
+  rendered.current = shown;
 
   useEffect(() => {
     firstRender.current = false;
@@ -111,7 +115,7 @@ export function AnimatePresence({ children, initial = true, custom, onExitComple
 
   return (
     <>
-      {entries.map((entry) => (
+      {shown.map((entry) => (
         <PresenceChild
           key={entry.key}
           isPresent={entry.present}
