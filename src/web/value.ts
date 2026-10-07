@@ -50,9 +50,11 @@ export class MotionValue<T extends number | string = number> {
 }
 
 /** A `MotionValue` that lives as long as the component. */
-export function useMotionValue<T extends number | string>(initial: T) {
-  const [value] = useState(() => new MotionValue<T>(initial));
-  return value;
+export function useMotionValue(initial: number): MotionValue<number>;
+export function useMotionValue(initial: string): MotionValue<string>;
+export function useMotionValue(initial: number | string): MotionValue<number> | MotionValue<string> {
+  const [value] = useState(() => new MotionValue<number | string>(initial));
+  return value as MotionValue<number> | MotionValue<string>;
 }
 
 const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());

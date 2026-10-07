@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useId,
+  useInsertionEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -52,6 +53,8 @@ export type WebMotionProps = MotionProps &
     whileTap?: MotionTarget;
     /** Pairs this element with another of the same id: one grows out of the other. */
     layoutId?: string;
+    /** Slides the element from where it was to where it lands whenever its layout position changes. */
+    layout?: boolean;
     style?: MotionStyle;
   };
 
@@ -169,8 +172,8 @@ function assignRef<T>(ref: ForwardedRef<T | null> | undefined, value: T | null) 
 }
 
 /** Creates an animated version of a DOM tag or of a component that forwards `ref`, `style`, and pointer events. */
-export function createMotionComponent<P extends object>(Component: ElementType) {
-  const MotionComponent = forwardRef<HTMLElement, P & WebMotionProps>(function MotionComponent(props, forwardedRef) {
+export function createMotionComponent(Component: ElementType) {
+  const MotionComponent = forwardRef<HTMLElement, WebMotionProps & Record<string, unknown>>(function MotionComponent(props, forwardedRef) {
     const {
       initial: initialProp,
       from,
@@ -183,6 +186,7 @@ export function createMotionComponent<P extends object>(Component: ElementType) 
       whilePress,
       whileTap,
       layoutId,
+      layout,
       drag,
       dragConstraints,
       dragElastic,
@@ -347,6 +351,42 @@ export function createMotionComponent<P extends object>(Component: ElementType) 
       // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by the resolved state
     }, [activeKey]);
 
+    // `popLayout`: a leaving element steps out of the layout where it is, before its siblings lay out.
+    const popsOut = !isPresent && presence?.mode === "popLayout";
+    useInsertionEffect(() => {
+      const element = elementRef.current;
+      if (!popsOut || !element) return;
+      const { offsetTop, offsetLeft, offsetWidth, offsetHeight } = element;
+      Object.assign(element.style, {
+        position: "absolute",
+        top: `${offsetTop}px`,
+        left: `${offsetLeft}px`,
+        width: `${offsetWidth}px`,
+        height: `${offsetHeight}px`,
+        margin: "0px",
+      });
+    }, [popsOut]);
+
+    // `layout`: when siblings come, go, or resize, slide from the old position to the new one.
+    const lastPosition = useRef<{ left: number; top: number } | null>(null);
+    useLayoutEffect(() => {
+      const element = elementRef.current;
+      if (!layout || !element) return;
+      const position = { left: element.offsetLeft, top: element.offsetTop };
+      const before = lastPosition.current;
+      lastPosition.current = position;
+      if (!before || !isPresent || typeof element.animate !== "function") return;
+      const dx = before.left - position.left;
+      const dy = before.top - position.top;
+      if (!dx && !dy) return;
+      const timing = timingOf(activeTransition, ["y"], "transform");
+      element.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0px, 0px)" }], {
+        duration: timing.duration,
+        easing: timing.easing,
+        composite: "add",
+      });
+    });
+
     useLayoutId(layoutId, elementRef, isPresent, activeTransition);
     const dragging = useDrag(elementRef, { drag, dragConstraints, dragElastic, dragListener, dragControls, onDragStart, onDrag, onDragEnd });
 
@@ -417,24 +457,34 @@ export function createMotionComponent<P extends object>(Component: ElementType) 
   return MotionComponent;
 }
 
+/** Props of a motion component: the wrapped component's own, plus motion props; `style` takes either kind. */
+export type MotionComponentProps<P> = Omit<P, keyof WebMotionProps> &
+  Omit<WebMotionProps, "style"> & { style?: (P extends { style?: infer S } ? S : never) | MotionStyle };
+type RefOf<P> = P extends { ref?: infer R } ? (R extends Ref<infer T> ? T : unknown) : unknown;
+export type MotionComponent<P> = React.ForwardRefExoticComponent<
+  React.PropsWithoutRef<MotionComponentProps<P>> & React.RefAttributes<RefOf<P>>
+>;
+
 type MotionTags = {
-  [Tag in keyof React.JSX.IntrinsicElements]: ReturnType<typeof createMotionComponent<React.JSX.IntrinsicElements[Tag]>>;
+  [Tag in keyof React.JSX.IntrinsicElements]: MotionComponent<React.JSX.IntrinsicElements[Tag]>;
 };
 
-const cache = new Map<ElementType, ReturnType<typeof createMotionComponent>>();
-const motionFor = <P extends object>(Component: ElementType) => {
+const cache = new Map<ElementType, unknown>();
+function motionFor<P extends object>(Component: React.ComponentType<P>): MotionComponent<P>;
+function motionFor<Tag extends keyof React.JSX.IntrinsicElements>(tag: Tag): MotionComponent<React.JSX.IntrinsicElements[Tag]>;
+function motionFor(Component: ElementType) {
   let component = cache.get(Component);
   if (!component) {
-    component = createMotionComponent<P>(Component) as ReturnType<typeof createMotionComponent>;
+    component = createMotionComponent(Component);
     cache.set(Component, component);
   }
-  return component as ReturnType<typeof createMotionComponent<P>>;
-};
+  return component;
+}
 
 /**
  * `motion.div`, `motion.span`, … for DOM tags, and `motion(Component)` for a component
  * that forwards `ref`, `style`, and pointer events to a DOM element.
  */
 export const motion = new Proxy(motionFor, {
-  get: (_target, tag: string) => motionFor(tag as ElementType),
+  get: (_target, tag: string) => motionFor(tag as keyof React.JSX.IntrinsicElements),
 }) as typeof motionFor & MotionTags;

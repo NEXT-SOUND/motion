@@ -22,6 +22,8 @@ export type PresenceContextValue = {
   initial: boolean;
   /** `AnimatePresence`'s `custom` value, for exit functions. */
   custom: unknown;
+  /** `"popLayout"` takes leaving elements out of the layout so the others move at once. */
+  mode: "sync" | "wait" | "popLayout";
   /** Called by each animated descendant with an exit; returns its unregister. */
   register: (id: string) => () => void;
   /** Called by a descendant when its exit has finished. */
@@ -50,8 +52,12 @@ export type AnimatePresenceProps = {
   /** Passed to exit functions of the children leaving, e.g. to exit instantly. */
   custom?: unknown;
   onExitComplete?: () => void;
-  /** `"wait"` holds new children back until the leaving ones have finished; `"sync"` (default) does both at once. */
-  mode?: "sync" | "wait";
+  /**
+   * `"sync"` (default) enters and exits together; `"wait"` holds new children back until the
+   * leaving ones have finished; `"popLayout"` takes leaving children out of the layout at once
+   * (web: absolutely positioned where they were), so the others can move into place.
+   */
+  mode?: "sync" | "wait" | "popLayout";
 };
 
 type Entry = { key: Key; element: ReactElement; present: boolean };
@@ -121,6 +127,7 @@ export function AnimatePresence({ children, initial = true, custom, onExitComple
           isPresent={entry.present}
           initial={initial || !firstRender.current || !initialKeys.has(entry.key)}
           custom={custom}
+          mode={mode}
           onDone={() => finish(entry.key)}
         >
           {entry.element}
@@ -135,12 +142,14 @@ function PresenceChild({
   isPresent,
   initial,
   custom,
+  mode,
   onDone,
 }: {
   children: ReactNode;
   isPresent: boolean;
   initial: boolean;
   custom: unknown;
+  mode: PresenceContextValue["mode"];
   onDone: () => void;
 }) {
   const registered = useRef(new Set<string>());
@@ -186,8 +195,8 @@ function PresenceChild({
   checkDoneRef.current = checkDone;
 
   const value = useMemo<PresenceContextValue>(
-    () => ({ isPresent, initial: enters, custom, register: api.register, onExitComplete: api.onExitComplete }),
-    [isPresent, enters, custom, api],
+    () => ({ isPresent, initial: enters, custom, mode, register: api.register, onExitComplete: api.onExitComplete }),
+    [isPresent, enters, custom, mode, api],
   );
   return <PresenceContext.Provider value={value}>{children}</PresenceContext.Provider>;
 }

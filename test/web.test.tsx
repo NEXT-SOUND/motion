@@ -159,6 +159,15 @@ describe("presence", () => {
     expect(queryByTestId("b")).not.toBeNull();
   });
 
+  it("takes a leaving child out of the layout in popLayout mode", () => {
+    const view = (show: boolean) => (
+      <AnimatePresence mode="popLayout">{show ? <motion.div key="a" data-testid="a" animate={{ opacity: 1 }} exit={{ opacity: 0 }} /> : null}</AnimatePresence>
+    );
+    const { rerender, getByTestId } = render(view(true));
+    rerender(view(false));
+    expect(getByTestId("a").style.position).toBe("absolute");
+  });
+
   it("keeps a leaving child in its place among the others", () => {
     const view = (keys: string[]) => (
       <AnimatePresence>
