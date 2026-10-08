@@ -1,5 +1,5 @@
 {
-  "name": "@yusang-park/motion",
+  "name": "@next-sound/motion",
   "version": "0.1.0",
   "description": "One animation API for React on the web (CSS and Web Animations) and React Native (Reanimated).",
   "license": "MIT",

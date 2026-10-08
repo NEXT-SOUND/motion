@@ -1,5 +1,5 @@
 /**
- * @yusang-park/motion — one animation API for React on the web and React Native.
+ * @next-sound/motion — one animation API for React on the web and React Native.
  * On the web it runs on CSS and Web Animations (no per-frame JavaScript for declared
  * animations); on native it runs on Reanimated.
  */

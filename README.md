@@ -1,4 +1,4 @@
-# @yusang-park/motion
+# @next-sound/motion
 
 One animation API for React on the web and React Native.
 
@@ -18,16 +18,16 @@ pnpm add github:NEXT-SOUND/motion
 ```
 
 The package ships TypeScript source. Add it to your bundler's transpile list
-(Next.js: `transpilePackages: ["@yusang-park/motion"]`), and import the keyframes once on the web:
+(Next.js: `transpilePackages: ["@next-sound/motion"]`), and import the keyframes once on the web:
 
 ```ts
-import "@yusang-park/motion/motion.css";
+import "@next-sound/motion/motion.css";
 ```
 
 ## Use
 
 ```tsx
-import { AnimatePresence, motion } from "@yusang-park/motion";
+import { AnimatePresence, motion } from "@next-sound/motion";
 
 <AnimatePresence>
   {open ? (

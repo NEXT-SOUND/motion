@@ -1,5 +1,5 @@
 /**
- * @yusang-park/motion on React Native: the same `motion`, `AnimatePresence`, and transition
+ * @next-sound/motion on React Native: the same `motion`, `AnimatePresence`, and transition
  * API as the web, running on Reanimated. Pointer drags, reordering, `layoutId`, and
  * `MotionValue` are web-only.
  */
