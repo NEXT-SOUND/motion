@@ -14,7 +14,7 @@ A few kilobytes instead of a full animation runtime.
 ## Install
 
 ```sh
-pnpm add github:Yusang-park/motion
+pnpm add github:NEXT-SOUND/motion
 ```
 
 The package ships TypeScript source. Add it to your bundler's transpile list

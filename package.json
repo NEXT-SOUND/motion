@@ -6,7 +6,7 @@
   "author": "Yusang Park",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Yusang-park/motion.git"
+    "url": "https://github.com/NEXT-SOUND/motion.git"
   },
   "type": "module",
   "main": "./src/web.ts",
