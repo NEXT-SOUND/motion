@@ -84,6 +84,32 @@ describe("auto sizes", () => {
   });
 });
 
+describe("enter completion", () => {
+  it("reads the element's animations in the next frame, not in the commit, and reports the enter once it finishes", async () => {
+    let frame: FrameRequestCallback | undefined;
+    const requestFrame = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frame = callback;
+      return 1;
+    });
+    let finish!: () => void;
+    const finished = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const getAnimations = vi.fn(() => [{ animationName: "ym-enter-opacity", finished, effect: { getComputedTiming: () => ({ iterations: 1 }) } }] as unknown as Animation[]);
+    HTMLElement.prototype.getAnimations = getAnimations;
+    const onAnimationComplete = vi.fn();
+    render(<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 200 }} onAnimationComplete={onAnimationComplete} />);
+    expect(getAnimations).not.toHaveBeenCalled();
+    act(() => frame?.(0));
+    expect(getAnimations).toHaveBeenCalledTimes(1);
+    expect(onAnimationComplete).not.toHaveBeenCalled();
+    await act(async () => finish());
+    expect(onAnimationComplete).toHaveBeenCalledWith({ opacity: 1 });
+    requestFrame.mockRestore();
+    delete (HTMLElement.prototype as Partial<HTMLElement>).getAnimations;
+  });
+});
+
 describe("changes", () => {
   it("animates a changed state through Web Animations from the previous values", () => {
     const { rerender } = render(<motion.div animate={{ opacity: 1 }} transition={{ duration: 200 }} />);

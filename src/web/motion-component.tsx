@@ -286,22 +286,29 @@ export function createMotionComponent(Component: ElementType) {
         if (!enter) return;
         callbacks.current.onAnimationStart?.(source);
         if (enter.kind === "css") {
-          const css = typeof element.getAnimations === "function"
-            ? element.getAnimations().filter((animation) => (animation as CSSAnimation).animationName?.startsWith("ym-enter"))
-            : [];
-          const finite = css.filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity);
-          if (finite.length) void Promise.all(finite.map((animation) => animation.finished)).then(done, () => {});
-          else if (!css.length) {
-            const longest = Math.max(...groupsOf(enter.entering).map((group) => {
-              const timing = timingOf(animateTarget.transition ?? transition, enter.entering, group);
-              return timing.iterations === Infinity ? -1 : timing.duration * timing.iterations + timing.delay;
-            }));
-            if (longest >= 0) {
-              const timer = setTimeout(done, longest);
-              return () => clearTimeout(timer);
+          // Reading the element's animations makes the browser compute its style, so it waits for the next frame,
+          // which computes that style anyway: read in the commit, it forced a style pass for every element a list
+          // mounted.
+          const mountedAt = performance.now();
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          const frame = requestAnimationFrame(() => {
+            const css = typeof element.getAnimations === "function"
+              ? element.getAnimations().filter((animation) => (animation as CSSAnimation).animationName?.startsWith("ym-enter"))
+              : [];
+            const finite = css.filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity);
+            if (finite.length) void Promise.all(finite.map((animation) => animation.finished)).then(done, () => {});
+            else if (!css.length) {
+              const longest = Math.max(...groupsOf(enter.entering).map((group) => {
+                const timing = timingOf(animateTarget.transition ?? transition, enter.entering, group);
+                return timing.iterations === Infinity ? -1 : timing.duration * timing.iterations + timing.delay;
+              }));
+              if (longest >= 0) timer = setTimeout(done, Math.max(0, longest - (performance.now() - mountedAt)));
             }
-          }
-          return;
+          });
+          return () => {
+            cancelAnimationFrame(frame);
+            clearTimeout(timer);
+          };
         }
       } else {
         callbacks.current.onAnimationStart?.(source);
