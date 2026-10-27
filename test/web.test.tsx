@@ -1,7 +1,7 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AnimatePresence, motion } from "../src/web";
+import { AnimatePresence, motion, Reorder } from "../src/web";
 
 type FakeAnimation = { finish: () => void; cancel: () => void; finished: Promise<void>; playState: string };
 let animations: { keyframes: Keyframe[]; options: KeyframeAnimationOptions; animation: FakeAnimation }[] = [];
@@ -219,5 +219,31 @@ describe("presence", () => {
     const { rerender, container } = render(view(["a", "b", "c"]));
     rerender(view(["a", "c"]));
     expect([...container.querySelectorAll("[data-testid]")].map((node) => node.getAttribute("data-testid"))).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("reorder", () => {
+  // jsdom lays nothing out, so each row reports a top from its place and the space above the list.
+  const list = (order: string[], above: number) => (
+    <Reorder.Group as="div" values={order} onReorder={() => {}}>
+      {order.map((key, index) => (
+        <Reorder.Item as="div" key={key} value={key} ref={(element: HTMLElement | null) => {
+          if (element) Object.defineProperty(element, "offsetTop", { configurable: true, get: () => above + index * 40 });
+        }}>{key}</Reorder.Item>
+      ))}
+    </Reorder.Group>
+  );
+  const slides = () => animations.filter(({ keyframes }) => keyframes.some((frame) => "translate" in frame));
+
+  it("slides the rows whose place in the order changed", () => {
+    const { rerender } = render(list(["a", "b", "c"], 0));
+    rerender(list(["b", "a", "c"], 0));
+    expect(slides()).toHaveLength(2);
+  });
+
+  it("does not slide rows that only moved because the content above the list changed size", () => {
+    const { rerender } = render(list(["a", "b", "c"], 0));
+    rerender(list(["a", "b", "c"], 120));
+    expect(slides()).toHaveLength(0);
   });
 });

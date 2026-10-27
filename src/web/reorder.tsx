@@ -92,6 +92,7 @@ const Item = forwardRef<HTMLElement, ItemProps>(function ReorderItem(
   const [dragging, setDragging] = useState(false);
   const drag = useRef<{ start: number; scrollStart: number; pointer: number; shift: number; scroller: HTMLElement | null; frame: number } | null>(null);
   const lastPosition = useRef<number | null>(null);
+  const lastIndex = useRef<number | null>(null);
   const callbacks = useRef({ onDragStart, onDragEnd });
   callbacks.current = { onDragStart, onDragEnd };
 
@@ -111,14 +112,19 @@ const Item = forwardRef<HTMLElement, ItemProps>(function ReorderItem(
     };
   }, [group.elements, value]);
 
-  // After each reorder: the dragged row stays under the pointer, the others slide to their new slots.
+  // After each reorder: the dragged row stays under the pointer, the others slide to their new slots. A row that
+  // only moved because something else changed size (a row above it opening, content above the list) keeps its
+  // place in the order and jumps with the layout instead of sliding.
   useLayoutEffect(() => {
     const element = elementRef.current;
     if (!element) return;
     const now = position(element);
     const before = lastPosition.current;
+    const index = group.values.indexOf(value);
+    const indexBefore = lastIndex.current;
     lastPosition.current = now;
-    if (before === null || before === now) return;
+    lastIndex.current = index;
+    if (before === null || before === now || indexBefore === index) return;
     const delta = now - before;
     const gesture = drag.current;
     if (gesture) {
